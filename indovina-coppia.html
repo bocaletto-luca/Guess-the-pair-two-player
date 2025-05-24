@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Indovina la Coppia - Release Definitiva</title>
+  <style>
+    body {
+      background-color: #f0f8ff;
+      font-family: Arial, sans-serif;
+      text-align: center;
+      margin: 0;
+      padding: 20px;
+    }
+    h2 {
+      color: #333;
+      margin-bottom: 10px;
+    }
+    /* Griglia 4x4 */
+    #coppiaBoard {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      margin: 20px auto;
+      max-width: 360px;
+    }
+    .card {
+      width: 80px;
+      height: 80px;
+      border-radius: 8px;
+      background-color: #333; /* Retro della carta coperta */
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2rem;
+      cursor: pointer;
+      transition: background-color 0.3s, color 0.3s;
+    }
+    /* Quando la carta è flipped o revealed, mostra il numero in rosso */
+    .card.flipped,
+    .card.revealed {
+      color: red;
+    }
+    /* Sfondo specifico per ciascun numero (1-8), quando è visibile */
+    .card[data-number="1"].flipped, .card[data-number="1"].revealed { background-color: #AED6F1; }
+    .card[data-number="2"].flipped, .card[data-number="2"].revealed { background-color: #A9DFBF; }
+    .card[data-number="3"].flipped, .card[data-number="3"].revealed { background-color: #F9E79F; }
+    .card[data-number="4"].flipped, .card[data-number="4"].revealed { background-color: #FADBD8; }
+    .card[data-number="5"].flipped, .card[data-number="5"].revealed { background-color: #D6DBDF; }
+    .card[data-number="6"].flipped, .card[data-number="6"].revealed { background-color: #D7BDE2; }
+    .card[data-number="7"].flipped, .card[data-number="7"].revealed { background-color: #F5CBA7; }
+    .card[data-number="8"].flipped, .card[data-number="8"].revealed { background-color: #D0ECE7; }
+    #coppiaMessage {
+      margin-top: 10px;
+      font-size: 1.2rem;
+      font-weight: bold;
+      color: #333;
+    }
+    .btn-custom {
+      margin: 5px;
+      padding: 10px 15px;
+      font-size: 1rem;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      transition: background-color 0.3s;
+    }
+    #coppiaHelpButton { background-color: #2ecc71; color: #fff; }
+    #coppiaHelpButton:hover { background-color: #27ae60; }
+    #coppiaRecordButton { background-color: #9b59b6; color: #fff; }
+    #coppiaRecordButton:hover { background-color: #8e44ad; }
+    #coppiaDownloadButton { background-color: #34495e; color: #fff; }
+    #coppiaDownloadButton:hover { background-color: #2c3e50; }
+    #coppiaCloseButton { background-color: #e74c3c; color: #fff; }
+    #coppiaCloseButton:hover { background-color: #c0392b; }
+    @media (max-width:576px) {
+      #coppiaBoard {
+        grid-template-columns: repeat(4, 70px);
+        max-width: 300px;
+      }
+      .card {
+        width: 70px;
+        height: 70px;
+        font-size: 1.8rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <h2>Indovina la Coppia - Release Definitiva</h2>
+  <div id="coppiaBoard"></div>
+  <div id="coppiaMessage">Turno: Giocatore 1 (Rosso) | Punteggio: R:0 - B:0</div>
+  <div class="btn-group" style="margin-top:10px;">
+    <button id="coppiaHelpButton" class="btn-custom">ℹ️ Help</button>
+    <button id="coppiaRecordButton" class="btn-custom">Record</button>
+    <button id="coppiaDownloadButton" class="btn-custom">Download Record JSON</button>
+    <button id="coppiaCloseButton" class="btn-custom">✖ Chiudi</button>
+  </div>
+  
+  <script>
+    "use strict";
+    // Chiavi per lo stato e i record
+    const COPPIA_STATE_KEY = "coppiaState";
+    const COPPIA_RECORDS_KEY = "coppiaRecords";
+    
+    // Se usiamo il parametro "fresh=1" nell'URL (quando avviamo una nuova competizione), puliamo lo stato
+    if (window.location.search.includes("fresh=1")) {
+      localStorage.removeItem(COPPIA_STATE_KEY);
+    }
+    
+    const numRows = 4, numCols = 4;
+    
+    // Variabili globali del gioco
+    let boardValues = [];  // Matrice 4x4 contenente i numeri (1-8 duplicati)
+    let boardState = [];   // Matrice 4x4: "hidden", "flipped" o "revealed"
+    let currentPlayer = 1; // 1 = Giocatore 1 (Rosso), 2 = Giocatore 2 (Blu)
+    let score = { player1: 0, player2: 0 };
+    let firstCard = null, secondCard = null;
+    let busy = false;
+    let gameOver = false;
+    
+    // Elementi DOM
+    const boardEl = document.getElementById("coppiaBoard");
+    const messageEl = document.getElementById("coppiaMessage");
+    const helpBtn = document.getElementById("coppiaHelpButton");
+    const recordBtn = document.getElementById("coppiaRecordButton");
+    const downloadBtn = document.getElementById("coppiaDownloadButton");
+    const closeBtn = document.getElementById("coppiaCloseButton");
+    
+    // Salva lo stato della partita in localStorage
+    function saveGameState() {
+      const state = {
+        boardValues,
+        boardState,
+        currentPlayer,
+        score,
+        firstCard,
+        secondCard,
+        gameOver
+      };
+      localStorage.setItem(COPPIA_STATE_KEY, JSON.stringify(state));
+    }
+    
+    // Carica lo stato salvato; se la partita risulta già terminata (o tutte le carte sono rivelate), si inizializza una nuova partita
+    function loadGameState() {
+      const saved = localStorage.getItem(COPPIA_STATE_KEY);
+      if (saved) {
+        try {
+          const state = JSON.parse(saved);
+          // Se gameOver è true o se tutte le carte sono rivelate, inizializza una nuova partita
+          if (state.gameOver || checkWholeBoardRevealed(state.boardState)) {
+            initializeNewGame();
+          } else {
+            boardValues = state.boardValues;
+            boardState = state.boardState;
+            currentPlayer = state.currentPlayer;
+            score = state.score;
+            firstCard = state.firstCard;
+            secondCard = state.secondCard;
+            gameOver = state.gameOver;
+          }
+        } catch (e) {
+          console.error("Errore nel caricamento dello stato:", e);
+          initializeNewGame();
+        }
+      } else {
+        initializeNewGame();
+      }
+    }
+    
+    // Controlla se tutte le celle sono in stato "revealed"
+    function checkWholeBoardRevealed(stateMatrix) {
+      for (let r = 0; r < stateMatrix.length; r++) {
+        for (let c = 0; c < stateMatrix[r].length; c++) {
+          if (stateMatrix[r][c] !== "revealed") return false;
+        }
+      }
+      return true;
+    }
+    
+    // Inizializza una nuova partita
+    function initializeNewGame() {
+      let values = [];
+      for (let i = 1; i <= 8; i++) {
+        values.push(i, i);
+      }
+      values = shuffle(values);
+      boardValues = [];
+      boardState = [];
+      for (let r = 0; r < numRows; r++) {
+        boardValues[r] = values.slice(r * numCols, r * numCols + numCols);
+        boardState[r] = Array(numCols).fill("hidden");
+      }
+      currentPlayer = 1;
+      score = { player1: 0, player2: 0 };
+      firstCard = null;
+      secondCard = null;
+      gameOver = false;
+      saveGameState();
+    }
+    
+    // Algoritmo di Fisher-Yates per mescolare
+    function shuffle(array) {
+      let currentIndex = array.length, randomIndex;
+      while (currentIndex !== 0) {
+        randomIndex = Math.floor(Math.random() * currentIndex);
+        currentIndex--;
+        [array[currentIndex], array[randomIndex]] = [array[randomIndex], array[currentIndex]];
+      }
+      return array;
+    }
+    
+    // Renderizza la board in base a boardState
+    function renderBoard() {
+      boardEl.innerHTML = "";
+      for (let r = 0; r < numRows; r++) {
+        for (let c = 0; c < numCols; c++) {
+          const card = document.createElement("div");
+          card.classList.add("card");
+          card.dataset.row = r;
+          card.dataset.col = c;
+          if (boardState[r][c] === "hidden") {
+            card.innerText = "";
+          } else if (boardState[r][c] === "flipped" || boardState[r][c] === "revealed") {
+            const num = boardValues[r][c];
+            card.innerText = num;
+            card.setAttribute("data-number", num);
+          }
+          card.addEventListener("click", onCardClick);
+          boardEl.appendChild(card);
+        }
+      }
+    }
+    
+    // Aggiorna il messaggio (turno e punteggio)
+    function updateMessage(extra = "") {
+      const turnText = currentPlayer === 1 ? "Giocatore 1 (Rosso)" : "Giocatore 2 (Blu)";
+      messageEl.innerText = `Turno: ${turnText} | Punteggio: R:${score.player1} - B:${score.player2} ${extra}`;
+    }
+    
+    // Handler per il click su una carta
+    function onCardClick(e) {
+      if (busy || gameOver) return;
+      const r = parseInt(e.currentTarget.dataset.row);
+      const c = parseInt(e.currentTarget.dataset.col);
+      if (boardState[r][c] !== "hidden") return;
+      boardState[r][c] = "flipped";
+      if (!firstCard) {
+        firstCard = { row: r, col: c };
+      } else if (!secondCard) {
+        // Evita doppio click sulla stessa carta
+        if (r === firstCard.row && c === firstCard.col) return;
+        secondCard = { row: r, col: c };
+        busy = true;
+        setTimeout(checkMatch, 800);
+      }
+      saveGameState();
+      renderBoard();
+    }
+    
+    // Confronta le due carte selezionate
+    function checkMatch() {
+      const { row: r1, col: c1 } = firstCard;
+      const { row: r2, col: c2 } = secondCard;
+      if (boardValues[r1][c1] === boardValues[r2][c2]) {
+        boardState[r1][c1] = "revealed";
+        boardState[r2][c2] = "revealed";
+        if (currentPlayer === 1) score.player1++;
+        else score.player2++;
+      } else {
+        boardState[r1][c1] = "hidden";
+        boardState[r2][c2] = "hidden";
+        currentPlayer = currentPlayer === 1 ? 2 : 1;
+      }
+      firstCard = null;
+      secondCard = null;
+      busy = false;
+      updateMessage();
+      saveGameState();
+      renderBoard();
+      if (isGameOver()) {
+        endGame();
+      }
+    }
+    
+    // Verifica se tutte le carte sono state rivelate
+    function isGameOver() {
+      for (let r = 0; r < numRows; r++) {
+        for (let c = 0; c < numCols; c++) {
+          if (boardState[r][c] === "hidden") return false;
+        }
+      }
+      return true;
+    }
+    
+    // Alla fine della partita, determina il vincitore, salva il record, cancella lo stato e notifica il parent
+    function endGame() {
+      let result = "draw";
+      if (score.player1 > score.player2) result = "red";
+      else if (score.player1 < score.player2) result = "blue";
+      updateMessage(" - Gioco Terminato!");
+      saveCoppiaRecord(result);
+      localStorage.removeItem(COPPIA_STATE_KEY);
+      setTimeout(() => { window.parent.reportGameResult(result); }, 1000);
+      gameOver = true;
+    }
+    
+    // Funzioni per i record
+    function getCoppiaRecords() {
+      return JSON.parse(localStorage.getItem(COPPIA_RECORDS_KEY)) || [];
+    }
+    function saveCoppiaRecord(winner) {
+      const record = {
+        date: new Date().toLocaleString(),
+        winner: winner === "draw" ? "Draw" : (winner === "red" ? "Giocatore 1 (Rosso)" : "Giocatore 2 (Blu)")
+      };
+      const records = getCoppiaRecords();
+      records.push(record);
+      localStorage.setItem(COPPIA_RECORDS_KEY, JSON.stringify(records));
+    }
+    function showRecord() {
+      const records = getCoppiaRecords();
+      let text = "Record Indovina la Coppia:\n\n";
+      if (records.length === 0)
+        text += "Nessun record salvato.";
+      else {
+        records.forEach((rec, i) => {
+          text += `${i+1}. ${rec.date} - Vincitore: ${rec.winner}\n`;
+        });
+      }
+      alert(text);
+    }
+    function downloadRecords() {
+      const records = getCoppiaRecords();
+      const data = JSON.stringify(records, null, 2);
+      const blob = new Blob([data], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "coppia-records.json";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+    
+    // Associa i pulsanti
+    helpBtn.addEventListener("click", function() {
+      alert(
+        "Indovina la Coppia:\n\n" +
+        "- Gioca su una griglia 4x4 con 8 coppie di carte (numeri da 1 a 8).\n" +
+        "- Clicca su una carta per rivelarla; se due carte rivelate sono uguali, rimangono visibili e il giocatore ottiene 1 punto.\n" +
+        "- Se non corrispondono, le carte si coprono e il turno passa all'altro giocatore.\n" +
+        "- Il gioco termina quando tutte le carte sono state rivelate.\n" +
+        "- Il punteggio determina il vincitore."
+      );
+    });
+    recordBtn.addEventListener("click", showRecord);
+    downloadBtn.addEventListener("click", downloadRecords);
+    closeBtn.addEventListener("click", function() {
+      if (confirm("Vuoi abbandonare questa sfida?")) { window.parent.closeGame(); }
+    });
+    
+    // All'avvio, carica lo stato salvato (o inizializza una nuova partita)
+    loadGameState();
+    renderBoard();
+    updateMessage();
+  </script>
+</body>
+</html>
