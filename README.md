@@ -7,6 +7,8 @@
 ![Project Completed](https://img.shields.io/badge/Project-Completed-green?style=for-the-badge)
 ![GPLv3](https://img.shields.io/badge/License-GPLv3-blue?style=for-the-badge)
 
+[![Test Online](https://img.shields.io/badge/Test%20Online-Click%20Here-brightgreen?style=for-the-badge)](https://bocaletto-luca.github.io/Guess-the-pair-two-player/)
+
 ## Overview
 
 **Guess the Pair Web Game Two-Player VS** is a browser‑based memory matching game where two players face off to find hidden matching pairs of cards. Enjoy smooth animations, responsive design, and real‑time score tracking in this classic, interactive game that requires no installation—just open your browser and play!
